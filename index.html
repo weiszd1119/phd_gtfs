@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <title>GTFS Mobility Dashboard</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { --dark: #1a202c; --blue: #3182ce; --green: #38a169; }
+        body { font-family: 'Segoe UI', sans-serif; display: flex; margin: 0; background: #f7fafc; height: 100vh; }
+        .sidebar { width: 350px; background: var(--dark); color: white; padding: 20px; overflow-y: auto; }
+        .main { flex-grow: 1; padding: 25px; overflow-y: auto; }
+        
+        .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; color: #333; }
+        select, button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 6px; border: 1px solid #4a5568; background: #2d3748; color: white; }
+        button { background: var(--blue); border: none; font-weight: bold; cursor: pointer; margin-top: 20px; }
+        button:hover { background: #2b6cb0; }
+
+        .day-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #edf2f7; margin-right: 3px; border: 1px solid #cbd5e0; }
+        .dot-on { background: var(--green); border-color: #2f855a; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th { text-align: left; font-size: 12px; color: #718096; text-transform: uppercase; padding: 10px; }
+        td { padding: 12px 10px; border-bottom: 1px solid #edf2f7; }
+        
+        .stat-box { background: #2d3748; padding: 15px; border-radius: 8px; margin-top: 20px; }
+        .stat-box h4 { margin: 0 0 10px 0; color: #a0aec0; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<div class="sidebar">
+    <h2>📊 PhD GTFS Dashboard</h2>
+    
+    <form method="POST">
+        <label>Település (automatikusan frissít):</label>
+        <select name="telepules_nev" onchange="this.form.submit()">
+            <option value="">-- Válassz --</option>
+            {% for t in telepules_lista %}
+            <option value="{{ t.nev }}" {% if form_data.telepules == t.nev %}selected{% endif %}>{{ t.nev }}</option>
+            {% endfor %}
+        </select>
+
+        <label>Konkrét megálló:</label>
+        <select name="stop_id">
+            <option value="">-- Megállóhelyek --</option>
+            {% for s in aktualis_megallok %}
+            <option value="{{ s.stop_id }}" {% if form_data.stop_id == s.stop_id|string %}selected{% endif %}>{{ s.stop_name }}</option>
+            {% endfor %}
+        </select>
+
+        <label>Irány (0: ki, 1: be):</label>
+        <select name="direction">
+            <option value="0" {% if form_data.direction == '0' %}selected{% endif %}>Kimenő irány (0)</option>
+            <option value="1" {% if form_data.direction == '1' %}selected{% endif %}>Bemenő irány (1)</option>
+        </select>
+
+        <button type="submit">ANALÍZIS INDÍTÁSA</button>
+    </form>
+
+    <div class="stat-box">
+        <h4>Legforgalmasabb helyek</h4>
+        {% for t in top_telepulesek %}
+        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px;">
+            <span>{{ t.t_nev }}</span>
+            <b style="color: var(--blue);">{{ t.j_szam }} járat</b>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="main">
+    {% if megjelenitendo_adatok %}
+        <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px;">
+            <div class="card">
+                <h3>📈 Napi járateloszlás (Óránként)</h3>
+                <canvas id="hourChart" style="max-height: 250px;"></canvas>
+            </div>
+            <div class="card">
+                <h3>📍 Megálló pozíciója</h3>
+                <div id="map" style="height: 200px; border-radius: 8px;"></div>
+                <p style="margin-top: 15px; font-size: 14px;">
+                    Hétvégi ellátottság: <strong style="color: var(--blue);">{{ info.hetvegi_arany }}%</strong>
+                </p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>🕒 Menetrend és üzemidő: {{ valasztott_nev }}</h3>
+            <table>
+                <thead>
+                    <tr><th>Indulás</th><th>Vonal & Cél</th><th>Üzemnapok (H-V)</th></tr>
+                </thead>
+                <tbody>
+                    {% for j in megjelenitendo_adatok %}
+                    <tr>
+                        <td style="font-weight: bold;">{{ j.ido }}</td>
+                        <td><span style="color: var(--blue); font-weight: bold;">{{ j.vonal }}</span> &rarr; {{ j.cel }}</td>
+                        <td>
+                            {% for i in range(7) %}
+                            <span class="day-dot {% if j.napok[i] %}dot-on{% endif %}" title="Nap {{i+1}}"></span>
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div style="text-align: center; margin-top: 15%; color: #a0aec0;">
+            <h1>Válasszon megállót az elemzéshez!</h1>
+            <p>A kutatási adatok a bal oldali szűrés után jelennek meg.</p>
+        </div>
+    {% endif %}
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    {% if megjelenitendo_adatok %}
+    // Diagram
+    new Chart(document.getElementById('hourChart'), {
+        type: 'bar',
+        data: {
+            labels: Array.from({length: 24}, (_, i) => i + ':00'),
+            datasets: [{
+                label: 'Járatok száma',
+                data: {{ ora_eloszlas }},
+                backgroundColor: '#3182ce',
+                borderRadius: 5
+            }]
+        },
+        options: { plugins: { legend: { display: false } } }
+    });
+
+    // Térkép
+    var map = L.map('map').setView([{{ coords[0] }}, {{ coords[1] }}], 14);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    L.marker([{{ coords[0] }}, {{ coords[1] }}]).addTo(map);
+    {% endif %}
+</script>
+
+</body>
+</html>
