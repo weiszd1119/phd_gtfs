@@ -2,142 +2,165 @@
 <html lang="hu">
 <head>
     <meta charset="UTF-8">
-    <title>GTFS Mobility Dashboard</title>
+    <title>Mobility PhD Dashboard</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        :root { --dark: #1a202c; --blue: #3182ce; --green: #38a169; }
-        body { font-family: 'Segoe UI', sans-serif; display: flex; margin: 0; background: #f7fafc; height: 100vh; }
-        .sidebar { width: 350px; background: var(--dark); color: white; padding: 20px; overflow-y: auto; }
+        :root { --sidebar: #1e293b; --bg: #f1f5f9; --primary: #2563eb; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; display: flex; height: 100vh; background: var(--bg); }
+        .sidebar { width: 300px; background: var(--sidebar); color: white; padding: 20px; overflow-y: auto; flex-shrink: 0; }
         .main { flex-grow: 1; padding: 25px; overflow-y: auto; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
         
-        .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; color: #333; }
-        select, button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 6px; border: 1px solid #4a5568; background: #2d3748; color: white; }
-        button { background: var(--blue); border: none; font-weight: bold; cursor: pointer; margin-top: 20px; }
-        button:hover { background: #2b6cb0; }
-
-        .day-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #edf2f7; margin-right: 3px; border: 1px solid #cbd5e0; }
-        .dot-on { background: var(--green); border-color: #2f855a; }
+        /* Excel stílusú táblázat */
+        .excel-table { width: 100%; border-collapse: collapse; margin-top: 10px; border: 1px solid #cbd5e1; }
+        .excel-table td, .excel-table th { border: 1px solid #cbd5e1; padding: 8px 12px; }
+        .excel-header { background: #f8fafc; font-weight: bold; text-align: left; }
+        .excel-val { text-align: center; font-weight: bold; background: #fff; width: 100px; }
+        .excel-dest { background: #e2e8f0; font-weight: bold; }
         
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th { text-align: left; font-size: 12px; color: #718096; text-transform: uppercase; padding: 10px; }
-        td { padding: 12px 10px; border-bottom: 1px solid #edf2f7; }
+        /* Menetrend táblázatok */
+        .tt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .tt-scroll { max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { position: sticky; top: 0; background: #f8fafc; padding: 10px; text-align: left; border-bottom: 2px solid #e2e8f0; font-size: 0.8em; }
+        td { padding: 10px; border-bottom: 1px solid #f1f5f9; font-size: 0.9em; }
+        .vonal-badge { background: #dbeafe; color: #1e40af; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
         
-        .stat-box { background: #2d3748; padding: 15px; border-radius: 8px; margin-top: 20px; }
-        .stat-box h4 { margin: 0 0 10px 0; color: #a0aec0; font-size: 14px; }
+        /* Sidebar elemek */
+        select, button { width: 100%; padding: 10px; margin-top: 10px; border-radius: 6px; border: none; }
+        button { background: var(--primary); color: white; font-weight: bold; cursor: pointer; }
+        .top-item { font-size: 0.8em; padding: 5px 0; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; }
     </style>
 </head>
 <body>
 
 <div class="sidebar">
-    <h2>📊 PhD GTFS Dashboard</h2>
-    
+    <h3>🔬 PhD MobilityLab</h3>
     <form method="POST">
-        <label>Település (automatikusan frissít):</label>
+        <label>Település</label>
         <select name="telepules_nev" onchange="this.form.submit()">
             <option value="">-- Válassz --</option>
             {% for t in telepules_lista %}
             <option value="{{ t.nev }}" {% if form_data.telepules == t.nev %}selected{% endif %}>{{ t.nev }}</option>
             {% endfor %}
         </select>
-
-        <label>Konkrét megálló:</label>
+        {% if aktualis_megallok %}
+        <label style="margin-top:15px; display:block;">Megállóhely</label>
         <select name="stop_id">
-            <option value="">-- Megállóhelyek --</option>
             {% for s in aktualis_megallok %}
             <option value="{{ s.stop_id }}" {% if form_data.stop_id == s.stop_id|string %}selected{% endif %}>{{ s.stop_name }}</option>
             {% endfor %}
         </select>
-
-        <label>Irány (0: ki, 1: be):</label>
+        <label style="margin-top:15px; display:block;">Irány</label>
         <select name="direction">
-            <option value="0" {% if form_data.direction == '0' %}selected{% endif %}>Kimenő irány (0)</option>
-            <option value="1" {% if form_data.direction == '1' %}selected{% endif %}>Bemenő irány (1)</option>
+            <option value="0" {% if form_data.direction == '0' %}selected{% endif %}>0 - Befelé</option>
+            <option value="1" {% if form_data.direction == '1' %}selected{% endif %}>1 - Kifelé</option>
         </select>
-
-        <button type="submit">ANALÍZIS INDÍTÁSA</button>
+        <button type="submit">ELEMZÉS</button>
+        {% endif %}
     </form>
-
-    <div class="stat-box">
-        <h4>Legforgalmasabb helyek</h4>
-        {% for t in top_telepulesek %}
-        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px;">
-            <span>{{ t.t_nev }}</span>
-            <b style="color: var(--blue);">{{ t.j_szam }} járat</b>
-        </div>
+    <div style="margin-top:40px;">
+        <h4>Top 5 Település</h4>
+        {% for top in top_telepulesek %}
+        <div class="top-item"><span>{{ top.t_nev }}</span><b>{{ top.j_szam }}</b></div>
         {% endfor %}
     </div>
 </div>
 
 <div class="main">
-    {% if megjelenitendo_adatok %}
-        <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px;">
-            <div class="card">
-                <h3>📈 Napi járateloszlás (Óránként)</h3>
-                <canvas id="hourChart" style="max-height: 250px;"></canvas>
-            </div>
-            <div class="card">
-                <h3>📍 Megálló pozíciója</h3>
-                <div id="map" style="height: 200px; border-radius: 8px;"></div>
-                <p style="margin-top: 15px; font-size: 14px;">
-                    Hétvégi ellátottság: <strong style="color: var(--blue);">{{ info.hetvegi_arany }}%</strong>
-                </p>
-            </div>
+    {% if t_stats %}
+    <div class="card" style="background: #0f172a; color: white;">
+        <h3 style="margin-top:0;">🏙️ Települési Portré: {{ form_data.telepules }}</h3>
+        <div style="display: flex; gap: 30px; font-size: 0.9em;">
+            <div>Megállók: <b style="color:#3b82f6;">{{ t_stats.m_db }} db</b></div>
+            <div>Vonalak: <b style="color:#3b82f6;">{{ t_stats.v_db }} db</b></div>
+            <div>Napi járatok: <b style="color:#3b82f6;">{{ t_stats.j_db }} db</b></div>
         </div>
+    </div>
+    {% endif %}
 
+    {% if valasztott_nev %}
+    <div class="card">
+        <table class="excel-table">
+            <tr class="excel-header"><th colspan="2">{{ valasztott_nev }} [{{ 'befelé' if form_data.direction == '0' else 'kifelé' }}]</th></tr>
+            <tr><td>Első járat hétköznap</td><td class="excel-val">{{ excel_stats.elso_hk }}</td></tr>
+            <tr><td>Utolsó járat hétköznap</td><td class="excel-val">{{ excel_stats.utolso_hk }}</td></tr>
+            <tr><td>Első járat hétvégén</td><td class="excel-val">{{ excel_stats.elso_hv }}</td></tr>
+            <tr><td>Utolsó járat hétvégén</td><td class="excel-val">{{ excel_stats.utolso_hv }}</td></tr>
+            <tr style="background:#f1f5f9; font-weight:bold;"><td>Összes indulás hétköznap</td><td class="excel-val">{{ excel_stats.osszes_hk }}</td></tr>
+            <tr style="background:#f1f5f9; font-weight:bold;"><td>Összes indulás hétvégén</td><td class="excel-val">{{ excel_stats.osszes_hv }}</td></tr>
+            
+            {% for cel, stat in excel_stats.celok.items() %}
+            <tr class="excel-dest"><td colspan="2">📍 Elérhető település: {{ cel }}</td></tr>
+            <tr><td style="padding-left:30px; font-style:italic;">Összes indulás hétköznap</td><td class="excel-val">{{ stat.hk }}</td></tr>
+            <tr><td style="padding-left:30px; font-style:italic;">Összes indulás hétvégén</td><td class="excel-val">{{ stat.hv }}</td></tr>
+            {% endfor %}
+        </table>
+    </div>
+
+    <div class="tt-grid">
         <div class="card">
-            <h3>🕒 Menetrend és üzemidő: {{ valasztott_nev }}</h3>
-            <table>
-                <thead>
-                    <tr><th>Indulás</th><th>Vonal & Cél</th><th>Üzemnapok (H-V)</th></tr>
-                </thead>
-                <tbody>
-                    {% for j in megjelenitendo_adatok %}
-                    <tr>
-                        <td style="font-weight: bold;">{{ j.ido }}</td>
-                        <td><span style="color: var(--blue); font-weight: bold;">{{ j.vonal }}</span> &rarr; {{ j.cel }}</td>
-                        <td>
-                            {% for i in range(7) %}
-                            <span class="day-dot {% if j.napok[i] %}dot-on{% endif %}" title="Nap {{i+1}}"></span>
-                            {% endfor %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+            <h3 style="margin-top:0;">📍 Térkép</h3>
+            <div id="map" style="height: 250px; border-radius: 8px;"></div>
+            <p>Hétvégi arány: <b>{{ info.hetvegi_arany }}%</b></p>
         </div>
-    {% else %}
-        <div style="text-align: center; margin-top: 15%; color: #a0aec0;">
-            <h1>Válasszon megállót az elemzéshez!</h1>
-            <p>A kutatási adatok a bal oldali szűrés után jelennek meg.</p>
+        <div class="card">
+            <h3 style="margin-top:0;">📊 Napi járatsűrűség</h3>
+            <canvas id="hourChart"></canvas>
         </div>
+    </div>
+
+    <div class="tt-grid">
+        <div class="card">
+            <h3 style="color:var(--primary);">📅 Hétköznap</h3>
+            <div class="tt-scroll">
+                <table>
+                    <thead><tr><th>Idő</th><th>Járat</th><th>Célállomás</th></tr></thead>
+                    <tbody>
+                        {% for m in menetrend_hk %}
+                        <tr><td><b>{{ m.ido }}</b></td><td><span class="vonal-badge">{{ m.vonal }}</span></td><td>{{ m.cel }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card">
+            <h3 style="color:#16a34a;">🏖️ Hétvége</h3>
+            <div class="tt-scroll">
+                <table>
+                    <thead><tr><th>Idő</th><th>Járat</th><th>Célállomás</th></tr></thead>
+                    <tbody>
+                        {% for m in menetrend_hv %}
+                        <tr><td><b>{{ m.ido }}</b></td><td><span class="vonal-badge" style="background:#dcfce7; color:#166534;">{{ m.vonal }}</span></td><td>{{ m.cel }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
     {% endif %}
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    {% if megjelenitendo_adatok %}
-    // Diagram
+    {% if coords %}
+    var map = L.map('map').setView([{{ coords[0] }}, {{ coords[1] }}], 16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    L.marker([{{ coords[0] }}, {{ coords[1] }}]).addTo(map);
+
     new Chart(document.getElementById('hourChart'), {
         type: 'bar',
         data: {
             labels: Array.from({length: 24}, (_, i) => i + ':00'),
             datasets: [{
                 label: 'Járatok száma',
-                data: {{ ora_eloszlas }},
-                backgroundColor: '#3182ce',
-                borderRadius: 5
+                data: {{ info.ora_eloszlas|tojson }},
+                backgroundColor: 'rgba(37, 99, 235, 0.7)'
             }]
-        },
-        options: { plugins: { legend: { display: false } } }
+        }
     });
-
-    // Térkép
-    var map = L.map('map').setView([{{ coords[0] }}, {{ coords[1] }}], 14);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    L.marker([{{ coords[0] }}, {{ coords[1] }}]).addTo(map);
     {% endif %}
 </script>
-
 </body>
 </html>
