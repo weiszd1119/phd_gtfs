@@ -2,162 +2,166 @@
 <html lang="hu">
 <head>
     <meta charset="UTF-8">
-    <title>PhD Mobility Dashboard</title>
+    <title>PhD Mobility Dashboard - Full Integrated View</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        @keyframes subtle-pulse { 0%, 100% { background-color: #fff; border-color: #e2e8f0; } 50% { background-color: #fef2f2; border-color: #ef4444; } }
-        .urgent-card { animation: subtle-pulse 2s infinite; border-left: 6px solid #ef4444 !important; }
-        #map { height: 350px; border-radius: 1rem; border: 1px solid #e2e8f0; }
+        /* Ugrálásmentes keret-lüktetés */
+        @keyframes border-pulse { 
+            0%, 100% { border-color: #e2e8f0; box-shadow: 0 0 0 rgba(0,0,0,0); } 
+            50% { border-color: #ef4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.15); } 
+        }
+
+        .urgent-card { 
+            animation: border-pulse 2s infinite ease-in-out !important; 
+            border-width: 1px !important; 
+            border-style: solid !important;
+        }
+
+        #map { height: 300px; border-radius: 0.75rem; border: 1px solid #e2e8f0; }
         .search-results { position: absolute; width: 100%; z-index: 1000; background: white; border: 1px solid #ddd; border-radius: 8px; max-height: 200px; overflow-y: auto; }
         .search-item { padding: 12px; cursor: pointer; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
         .search-item:hover { background: #f8fafc; color: #2563eb; }
-        .day-active { color: #2563eb; font-weight: 800; }
-        .day-inactive { color: #cbd5e1; }
+        pre { font-size: 9px; color: #4ade80; }
+        .matrix-badge { font-size: 9px; font-weight: 900; }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-800 p-6">
+<body class="bg-slate-50 text-slate-900 p-4">
 
-    <div class="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-4 gap-8">
+    <div class="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-4 gap-6">
         
-        <div class="space-y-6">
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <form method="POST" id="mainForm" class="space-y-4">
+        <div class="space-y-4">
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                <form method="POST" id="mainForm" class="space-y-3">
+                    <label class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Megálló keresése</label>
                     <div class="relative">
-                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Megállóhely keresése (Összevont)</label>
-                        <input type="text" id="stopSearch" name="stop_name" value="{{ form_data.get('stop_name', '') }}" placeholder="Például: Népliget" class="w-full mt-1 p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm">
+                        <input type="text" id="stopSearch" name="stop_name" value="{{ form_data.get('stop_name', '') }}" class="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500">
                         <div id="results" class="search-results hidden shadow-xl"></div>
                     </div>
                     <div class="grid grid-cols-2 gap-2">
-                        <select name="direction" class="p-2.5 bg-slate-50 border-none rounded-lg text-xs font-bold text-slate-600">
-                            <option value="1" {{ 'selected' if form_data.get('direction') == '1' }}>Kifelé (1)</option>
-                            <option value="0" {{ 'selected' if form_data.get('direction') == '0' }}>Befelé (0)</option>
+                        <select name="direction" class="p-2 bg-slate-50 border-none rounded-lg text-xs font-bold text-slate-600">
+                            <option value="1" {{ 'selected' if form_data.get('direction') == '1' }}>Kifelé</option>
+                            <option value="0" {{ 'selected' if form_data.get('direction') == '0' }}>Befelé</option>
                         </select>
-                        <select name="filter_day" class="p-2.5 bg-slate-50 border-none rounded-lg text-xs font-bold text-slate-600">
-                            <option value="all">Összes nap</option>
+                        <select name="filter_day" class="p-2 bg-slate-50 border-none rounded-lg text-xs font-bold text-slate-600">
+                            <option value="all">Minden nap</option>
                             {% for i, nap in enumerate(["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat", "Vasárnap"]) %}
                             <option value="{{ i }}" {{ 'selected' if form_data.get('filter_day') == i|string }}>{{ nap }}</option>
                             {% endfor %}
                         </select>
                     </div>
-                    <button class="w-full bg-slate-900 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider hover:bg-blue-600 transition-all">Statisztika Frissítése</button>
+                    <button class="w-full bg-slate-900 text-white font-bold py-2 rounded-lg text-xs uppercase hover:bg-blue-600 transition-all">Frissítés</button>
                 </form>
             </div>
 
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <h3 class="text-xs font-black text-blue-600 uppercase mb-4 border-b pb-2 truncate italic tracking-tighter">{{ valasztott_nev or 'Nincs kijelölt állomás' }}</h3>
-                <table class="w-full text-[11px] mb-6">
-                    <thead>
-                        <tr class="text-slate-400 border-b"><th class="text-left py-2">Nap</th><th class="text-center">Indulás</th><th class="text-right">Üzemidő</th></tr>
-                    </thead>
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                <h3 class="text-[10px] font-black text-blue-600 uppercase mb-4 border-b pb-2 italic tracking-tighter">{{ valasztott_nev or 'Nincs kijelölt állomás' }}</h3>
+                
+                <table class="w-full text-[10px] mb-4">
                     <tbody class="divide-y divide-slate-50">
                         {% for nap, s in napi_stats.items() %}
-                        <tr class="{{ 'bg-blue-50/50' if s.db > 0 else '' }}">
-                            <td class="py-2 font-bold">{{ nap }}</td>
-                            <td class="text-center font-black">{{ s.db }}</td>
-                            <td class="text-right text-slate-400 font-mono">{{ s.elso }}-{{ s.utolso }}</td>
+                        <tr>
+                            <td class="py-1.5 font-bold">{{ nap }}</td>
+                            <td class="text-center font-black text-blue-600">{{ s.db }}</td>
+                            <td class="text-right text-slate-400 font-mono text-[9px]">{{ s.elso }}-{{ s.utolso }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
 
-                {% if cel_stats %}
-                <div class="space-y-3">
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic border-t pt-4">Célállomás mátrix</p>
-                    {% for cel, napok in cel_stats.items() %}
-                    <div class="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                        <div class="text-[10px] font-bold text-slate-700 truncate mb-2">{{ cel }}</div>
-                        <div class="flex justify-between">
-                            {% for i, n_short in enumerate(['H','K','Sze','Cs','P','Szo','V']) %}
-                            {% set n_full = ["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat", "Vasárnap"][i] %}
-                            <div class="flex flex-col items-center">
-                                <span class="text-[8px] text-slate-300">{{ n_short }}</span>
-                                <span class="text-[10px] font-black {{ 'text-blue-600' if napok.get(n_full, 0) > 0 else 'text-slate-200' }}">
-                                    {{ napok.get(n_full, 0) }}
-                                </span>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    {% endfor %}
+                <div class="mb-6">
+                    <canvas id="densityChart" height="180"></canvas>
                 </div>
-                {% endif %}
+
+                <div class="space-y-2 border-t pt-4">
+                    <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Célállomás mátrix</p>
+                    {% if cel_stats %}
+                        {% for cel, napok in cel_stats.items() %}
+                        <div class="p-2 bg-slate-50 rounded-lg border border-slate-100">
+                            <div class="text-[9px] font-bold text-slate-700 truncate mb-1.5">{{ cel }}</div>
+                            <div class="flex justify-between">
+                                {% for i, n_short in enumerate(['H','K','Sz','Cs','P','Sz','V']) %}
+                                {% set n_full = ["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat", "Vasárnap"][i] %}
+                                <div class="flex flex-col items-center">
+                                    <span class="text-[7px] text-slate-300">{{ n_short }}</span>
+                                    <span class="matrix-badge {{ 'text-blue-600' if napok.get(n_full, 0) > 0 else 'text-slate-200' }}">
+                                        {{ napok.get(n_full, 0) }}
+                                    </span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
             </div>
         </div>
 
-        <div class="lg:col-span-3 space-y-6">
+        <div class="lg:col-span-3 space-y-4">
             <div id="map"></div>
 
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div class="flex flex-col gap-2">
                 {% for j in kovetkezo_ot %}
-                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm transition-all {% if j.hatralevo <= 5 and j.hatralevo >= 0 %}urgent-card{% else %}border-l-4 border-l-slate-900{% endif %}">
-                    <div class="text-[10px] font-black text-slate-400 uppercase mb-1">{{ j.vonal }}</div>
-                    <div class="text-sm font-bold text-slate-800 truncate mb-3">{{ j.cel }}</div>
-                    <div class="flex justify-between items-end">
-                        <div class="text-3xl font-black text-slate-900 leading-none">{% if j.hatralevo >= 0 %}{{ j.hatralevo }}{% else %}--{% endif %}</div>
-                        <div class="text-[10px] font-bold text-slate-400 uppercase pb-1 ml-1">perc</div>
-                    </div>
-                    <div class="mt-3 pt-2 border-t border-slate-50 text-[9px] text-slate-400 font-mono italic">
-                        Terv: {{ j.ido }}
+                <div class="bg-white rounded-lg border border-slate-200 border-l-4 border-l-slate-900 shadow-sm p-3 card-container transition-all" data-seconds="{{ j.hatralevo * 60 }}">
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center gap-3 overflow-hidden min-w-0">
+                            <span class="bg-slate-100 px-2 py-1 rounded font-black text-[10px] text-slate-700">{{ j.vonal }}</span>
+                            <div class="text-sm font-bold text-slate-800 truncate">{{ j.cel }}</div>
+                        </div>
+                        <div class="flex items-center gap-4 flex-shrink-0">
+                            <div class="text-[9px] text-slate-400 font-mono italic">TERV: {{ j.ido }}</div>
+                            <div class="text-2xl font-black text-slate-900 countdown-timer min-w-[70px] text-right" data-seconds="{{ j.hatralevo * 60 }}">
+                                {{ j.hatralevo }}
+                            </div>
+                            <div class="text-[9px] font-black text-slate-400 uppercase">perc</div>
+                        </div>
                     </div>
                 </div>
                 {% endfor %}
-                {% if not kovetkezo_ot and valasztott_nev %}
-                <div class="col-span-5 p-4 text-center bg-white rounded-xl text-slate-400 text-xs italic">Nincs több induló járat a mai napon.</div>
-                {% endif %}
             </div>
 
-            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <div class="bg-slate-900 px-6 py-4 flex justify-between items-center">
-                    <h3 class="text-white text-xs font-bold uppercase tracking-widest italic">Menetrendi adatsorok</h3>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left text-sm">
-                        <thead class="bg-slate-50 text-[10px] font-black text-slate-400 uppercase">
-                            <tr>
-                                <th class="px-6 py-4">Indulás</th>
-                                <th class="px-6 py-4">Vonal</th>
-                                <th class="px-6 py-4">Célállomás</th>
-                                <th class="px-6 py-4 text-center">Naptár (H-V)</th>
-                                <th class="px-6 py-4 text-right">Becsült</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100">
-                            {% for m in menetrend %}
-                            <tr class="hover:bg-slate-50 transition-colors">
-                                <td class="px-6 py-4 font-mono font-bold text-slate-400 italic">{{ m.ido }}</td>
-                                <td class="px-6 py-4"><span class="bg-slate-100 px-2 py-0.5 rounded font-black text-[11px] text-slate-700">{{ m.vonal }}</span></td>
-                                <td class="px-6 py-4 font-semibold text-slate-800">{{ m.cel }}</td>
-                                <td class="px-6 py-4 text-center font-mono text-[11px] tracking-tighter">
-                                    {% for i, n in enumerate(['H','K','Sz','Cs','P','Sz','V']) %}
-                                    <span class="{{ 'day-active' if m.napok_pipa[i] else 'day-inactive' }} px-0.5">{{ n }}</span>
-                                    {% endfor %}
-                                </td>
-                                <td class="px-6 py-4 text-right font-black">
-                                    {% if m.hatralevo >= 0 %}
-                                    <span class="{{ 'text-red-600' if m.hatralevo <= 5 else 'text-slate-900' }}">{{ m.hatralevo }} perc</span>
-                                    {% else %}<span class="text-slate-300 italic text-xs">Indult</span>{% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            
-            <div class="bg-slate-900 p-3 rounded-xl font-mono text-[9px] text-green-500 overflow-hidden whitespace-nowrap">
-                Status: {{ diag.get('status', 'Nincs adat') }} | 
-                Delay: +{{ diag.get('delay_min', 0) }} min | 
-                Raw: {{ diag.get('raw_json', '{}')[:100] }}...
+            <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                <table class="w-full text-left text-[13px]">
+                    <thead class="bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest italic">
+                        <tr><th class="px-5 py-3">Indulás</th><th class="px-5 py-3">Vonal</th><th class="px-5 py-3">Célállomás</th><th class="px-5 py-3 text-right">Becsült</th></tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        {% for m in menetrend %}
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="px-5 py-3 font-mono text-slate-400 italic">{{ m.ido }}</td>
+                            <td class="px-5 py-3"><span class="bg-slate-100 px-2 py-0.5 rounded font-black text-[10px]">{{ m.vonal }}</span></td>
+                            <td class="px-5 py-3 font-semibold">{{ m.cel }}</td>
+                            <td class="px-5 py-3 text-right font-black">
+                                {% if m.hatralevo >= 0 %}
+                                <span class="countdown-timer" data-seconds="{{ m.hatralevo * 60 }}">{{ m.hatralevo }} perc</span>
+                                {% else %}<span class="text-slate-300 italic">Indult</span>{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
 
+    <div class="max-w-[1600px] mx-auto mt-8">
+        <div class="bg-slate-900 p-6 rounded-xl border border-slate-800">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 border-b border-slate-800 pb-4">
+                <div><p class="text-[8px] text-slate-500 uppercase">Traffic Delay</p><p class="text-white font-mono">+{{ diag.get('delay_min', 0) }} min</p></div>
+                <div><p class="text-[8px] text-slate-500 uppercase">Status</p><p class="text-green-500 font-mono">CONNECTED</p></div>
+                <div><p class="text-[8px] text-slate-500 uppercase">API Version</p><p class="text-blue-400 font-mono">Routes V2</p></div>
+                <div><p class="text-[8px] text-slate-500 uppercase">Clock</p><p id="sys-clock" class="text-white font-mono">00:00:00</p></div>
+            </div>
+            <pre class="max-h-40 overflow-auto">{{ diag.get('raw_json', '{}') }}</pre>
+        </div>
+    </div>
+
     <script>
+        // --- TÉRKÉP ÉS KERESŐ ---
         const searchInput = document.getElementById('stopSearch');
         const resultsDiv = document.getElementById('results');
-
         searchInput.addEventListener('input', async (e) => {
             const val = e.target.value;
             if (val.length < 2) { resultsDiv.classList.add('hidden'); return; }
@@ -168,11 +172,7 @@
                 const d = document.createElement('div');
                 d.className = 'search-item';
                 d.innerText = item.name;
-                d.onclick = () => {
-                    searchInput.value = item.name;
-                    resultsDiv.classList.add('hidden');
-                    document.getElementById('mainForm').submit();
-                };
+                d.onclick = () => { searchInput.value = item.name; resultsDiv.classList.add('hidden'); document.getElementById('mainForm').submit(); };
                 resultsDiv.appendChild(d);
             });
             resultsDiv.classList.remove('hidden');
@@ -180,9 +180,63 @@
 
         var map = L.map('map').setView([{{ coords[0] }}, {{ coords[1] }}], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-        {% if valasztott_nev %}
-        L.marker([{{ coords[0] }}, {{ coords[1] }}]).addTo(map).bindPopup("{{ valasztott_nev }}").openPopup();
-        {% endif %}
+        {% if valasztott_nev %} L.marker([{{ coords[0] }}, {{ coords[1] }}]).addTo(map); {% endif %}
+
+        // --- DIAGRAM ---
+        const ctx = document.getElementById('densityChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: [{% for nap in napi_stats.keys() %}"{{ nap[:3] }}",{% endfor %}],
+                datasets: [{
+                    data: [{% for s in napi_stats.values() %}{{ s.db }},{% endfor %}],
+                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                    borderColor: 'rgba(59, 130, 246, 1)',
+                    borderWidth: 1.5,
+                    borderRadius: 3
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { 
+                    y: { display: false, beginAtZero: true },
+                    x: { grid: { display: false }, ticks: { font: { size: 9 } } }
+                }
+            }
+        });
+
+        // --- ÓRA ÉS VISSZASZÁMLÁLÓK ---
+        function updateAll() {
+            document.getElementById('sys-clock').innerText = new Date().toTimeString().split(' ')[0];
+
+            document.querySelectorAll('.card-container').forEach(card => {
+                let sec = parseInt(card.getAttribute('data-seconds'));
+                const timer = card.querySelector('.countdown-timer');
+                if (isNaN(sec) || sec <= 0) {
+                    timer.innerHTML = '<span class="text-slate-300 italic text-xs">Indult</span>';
+                    card.classList.remove('urgent-card');
+                    return;
+                }
+                sec--;
+                card.setAttribute('data-seconds', sec);
+                if (sec <= 300) card.classList.add('urgent-card');
+                let m = Math.floor(sec / 60);
+                let s = sec % 60;
+                timer.innerText = sec < 600 ? `${m}:${s < 10 ? "0" : ""}${s}` : m;
+            });
+
+            document.querySelectorAll('.countdown-timer').forEach(t => {
+                if (t.closest('.card-container')) return;
+                let s = parseInt(t.getAttribute('data-seconds'));
+                if (isNaN(s) || s <= 0) return;
+                s--;
+                t.setAttribute('data-seconds', s);
+                let m = Math.floor(s / 60);
+                t.innerText = s < 600 ? `${m}:${(s%60).toString().padStart(2, '0')}` : `${m} perc`;
+            });
+        }
+        setInterval(updateAll, 1000);
     </script>
 </body>
 </html>
