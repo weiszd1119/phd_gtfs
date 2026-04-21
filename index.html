@@ -3,138 +3,186 @@
 <head>
     <meta charset="UTF-8">
     <title>PhD Mobility Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        :root { --sidebar: #0f172a; --primary: #2563eb; --border: #e2e8f0; }
-        body { margin: 0; font-family: 'Inter', sans-serif; display: flex; height: 100vh; background: #f8fafc; color: #1e293b; }
-        .sidebar { width: 300px; background: var(--sidebar); color: white; padding: 20px; flex-shrink: 0; }
-        .main { flex-grow: 1; padding: 25px; overflow-y: auto; }
-        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 25px; }
-        
-        /* Day Selector UI */
-        .day-selector { display: flex; gap: 4px; background: #334155; padding: 4px; border-radius: 8px; margin: 15px 0; }
-        .day-selector label { flex: 1; text-align: center; cursor: pointer; padding: 8px 2px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
-        .day-selector input { display: none; }
-        .day-selector input:checked + label { background: var(--primary); color: white; }
-        
-        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-        th { background: #f1f5f9; padding: 10px; text-align: left; border: 1px solid var(--border); }
-        td { padding: 8px; border: 1px solid var(--border); }
-        
-        .active-day { color: #059669; font-weight: bold; background: #f0fdf4; text-align: center; }
-        .inactive-day { color: #cbd5e1; text-align: center; }
-        .vonal-badge { background: #eff6ff; color: #1e40af; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; }
-        
-        select, button { width: 100%; padding: 10px; margin-top: 10px; border-radius: 6px; border: 1px solid #475569; background: #1e293b; color: white; }
-        button { background: var(--primary); border: none; font-weight: bold; cursor: pointer; }
-        
-        .excel-total { background: #f8fafc; font-weight: bold; }
+        @keyframes subtle-pulse { 0%, 100% { background-color: #fff; border-color: #e2e8f0; } 50% { background-color: #fef2f2; border-color: #ef4444; } }
+        .urgent-card { animation: subtle-pulse 2s infinite; border-left: 6px solid #ef4444 !important; }
+        #map { height: 350px; border-radius: 1rem; border: 1px solid #e2e8f0; }
+        .search-results { position: absolute; width: 100%; z-index: 1000; background: white; border: 1px solid #ddd; border-radius: 8px; max-height: 200px; overflow-y: auto; }
+        .search-item { padding: 12px; cursor: pointer; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+        .search-item:hover { background: #f8fafc; color: #2563eb; }
+        .day-active { color: #2563eb; font-weight: 800; }
+        .day-inactive { color: #cbd5e1; }
     </style>
 </head>
-<body>
+<body class="bg-slate-50 text-slate-800 p-6">
 
-<div class="sidebar">
-    <h2 style="color:var(--primary); font-size: 1.2rem;">🔬 MobilityLab v3</h2>
-    <form method="POST">
-        <label>Település</label>
-        <select name="telepules_nev" onchange="this.form.submit()">
-            <option value="">-- Válassz --</option>
-            {% for t in telepules_lista %}
-            <option value="{{ t.nev }}" {% if form_data.telepules == t.nev %}selected{% endif %}>{{ t.nev }}</option>
-            {% endfor %}
-        </select>
-
-        {% if aktualis_megallok %}
-        <label style="margin-top:15px; display:block;">Megálló</label>
-        <select name="stop_id" onchange="this.form.submit()">
-            {% for s in aktualis_megallok %}
-            <option value="{{ s.stop_id }}" {% if form_data.stop_id == s.stop_id|string %}selected{% endif %}>{{ s.stop_name }}</option>
-            {% endfor %}
-        </select>
+    <div class="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-4 gap-8">
         
-        <label style="margin-top:15px; display:block;">Irány</label>
-        <select name="direction" onchange="this.form.submit()">
-            <option value="1" {% if form_data.direction == '1' %}selected{% endif %}>1 - Kifelé</option>
-            <option value="0" {% if form_data.direction == '0' %}selected{% endif %}>0 - Befelé</option>
-        </select>
+        <div class="space-y-6">
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <form method="POST" id="mainForm" class="space-y-4">
+                    <div class="relative">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Megállóhely keresése (Összevont)</label>
+                        <input type="text" id="stopSearch" name="stop_name" value="{{ form_data.get('stop_name', '') }}" placeholder="Például: Népliget" class="w-full mt-1 p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm">
+                        <div id="results" class="search-results hidden shadow-xl"></div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <select name="direction" class="p-2.5 bg-slate-50 border-none rounded-lg text-xs font-bold text-slate-600">
+                            <option value="1" {{ 'selected' if form_data.get('direction') == '1' }}>Kifelé (1)</option>
+                            <option value="0" {{ 'selected' if form_data.get('direction') == '0' }}>Befelé (0)</option>
+                        </select>
+                        <select name="filter_day" class="p-2.5 bg-slate-50 border-none rounded-lg text-xs font-bold text-slate-600">
+                            <option value="all">Összes nap</option>
+                            {% for i, nap in enumerate(["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat", "Vasárnap"]) %}
+                            <option value="{{ i }}" {{ 'selected' if form_data.get('filter_day') == i|string }}>{{ nap }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button class="w-full bg-slate-900 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider hover:bg-blue-600 transition-all">Statisztika Frissítése</button>
+                </form>
+            </div>
 
-        <p style="margin-top:20px; font-size:0.8rem; color:#94a3b8;">📅 Napi forgalmi rend szűrése:</p>
-        <div class="day-selector">
-            <input type="radio" id="all" name="filter_day" value="all" {% if form_data.filter_day == 'all' %}checked{% endif %} onchange="this.form.submit()">
-            <label for="all">MIND</label>
-            {% for v, n in [('0','H'),('1','K'),('2','Sze'),('3','Cs'),('4','P'),('5','Szo'),('6','V')] %}
-            <input type="radio" id="d{{v}}" name="filter_day" value="{{v}}" {% if form_data.filter_day == v %}checked{% endif %} onchange="this.form.submit()">
-            <label for="d{{v}}">{{n}}</label>
-            {% endfor %}
-        </div>
-        {% endif %}
-    </form>
-</div>
-
-<div class="main">
-    {% if valasztott_nev %}
-    <div class="card" style="background: #1e293b; color: white; border: none;">
-        <h2 style="margin:0; font-size: 1.5rem;">📍 {{ valasztott_nev }}</h2>
-        <p style="margin:5px 0 0 0; opacity:0.7; font-size: 0.9rem;">Érvényes menetrendi kínálat (mai naptól +30 nap)</p>
-    </div>
-
-    <div class="card">
-        <h3>📊 Heti Összesítő (Célállomás / Nap)</h3>
-        <table>
-            <thead>
-                <tr style="background:#f1f5f9;">
-                    <th>Célállomás</th>
-                    {% for n in ["H", "K", "Sze", "Cs", "P", "Szo", "V"] %}<th>{{n}}</th>{% endfor %}
-                </tr>
-            </thead>
-            <tbody>
-                {% for cel, napok in cel_statisztika.items() %}
-                <tr>
-                    <td><b>{{ cel }}</b></td>
-                    {% for n in ["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat", "Vasárnap"] %}
-                    <td style="text-align:center; {% if napok[n] > 0 %}color:var(--primary); font-weight:bold;{% else %}color:#cbd5e1;{% endif %}">
-                        {{ napok[n] if napok[n] > 0 else '0' }}
-                    </td>
-                    {% endfor %}
-                </tr>
-                {% endfor %}
-                <tr class="excel-total">
-                    <td>ÖSSZES INDULÁS</td>
-                    {% for n in ["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat", "Vasárnap"] %}
-                    <td style="text-align:center; color:var(--primary);">{{ nap_statisztika[n] }}</td>
-                    {% endfor %}
-                </tr>
-            </tbody>
-        </table>
-    </div>
-
-    <div class="card">
-        <h3>📅 Indulási időpontok mátrixa</h3>
-        <div style="max-height: 500px; overflow-y: auto;">
-            <table>
-                <thead style="position: sticky; top:0; z-index:10;">
-                    <tr>
-                        <th>Idő</th><th>Vonal</th><th>Végállomás</th>
-                        <th>H</th><th>K</th><th>Sze</th><th>Cs</th><th>P</th><th>Szo</th><th>V</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for m in menetrend %}
-                    <tr>
-                        <td style="white-space:nowrap;"><b>{{ m.ido }}</b></td>
-                        <td><span class="vonal-badge">{{ m.vonal }}</span></td>
-                        <td>{{ m.cel }}</td>
-                        {% for aktiv in m.napok %}
-                        <td class="{{ 'active-day' if aktiv else 'inactive-day' }}">
-                            {{ '●' if aktiv else '○' }}
-                        </td>
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h3 class="text-xs font-black text-blue-600 uppercase mb-4 border-b pb-2 truncate italic tracking-tighter">{{ valasztott_nev or 'Nincs kijelölt állomás' }}</h3>
+                <table class="w-full text-[11px] mb-6">
+                    <thead>
+                        <tr class="text-slate-400 border-b"><th class="text-left py-2">Nap</th><th class="text-center">Indulás</th><th class="text-right">Üzemidő</th></tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-50">
+                        {% for nap, s in napi_stats.items() %}
+                        <tr class="{{ 'bg-blue-50/50' if s.db > 0 else '' }}">
+                            <td class="py-2 font-bold">{{ nap }}</td>
+                            <td class="text-center font-black">{{ s.db }}</td>
+                            <td class="text-right text-slate-400 font-mono">{{ s.elso }}-{{ s.utolso }}</td>
+                        </tr>
                         {% endfor %}
-                    </tr>
+                    </tbody>
+                </table>
+
+                {% if cel_stats %}
+                <div class="space-y-3">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic border-t pt-4">Célállomás mátrix</p>
+                    {% for cel, napok in cel_stats.items() %}
+                    <div class="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <div class="text-[10px] font-bold text-slate-700 truncate mb-2">{{ cel }}</div>
+                        <div class="flex justify-between">
+                            {% for i, n_short in enumerate(['H','K','Sze','Cs','P','Szo','V']) %}
+                            {% set n_full = ["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat", "Vasárnap"][i] %}
+                            <div class="flex flex-col items-center">
+                                <span class="text-[8px] text-slate-300">{{ n_short }}</span>
+                                <span class="text-[10px] font-black {{ 'text-blue-600' if napok.get(n_full, 0) > 0 else 'text-slate-200' }}">
+                                    {{ napok.get(n_full, 0) }}
+                                </span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
                     {% endfor %}
-                </tbody>
-            </table>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="lg:col-span-3 space-y-6">
+            <div id="map"></div>
+
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                {% for j in kovetkezo_ot %}
+                <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm transition-all {% if j.hatralevo <= 5 and j.hatralevo >= 0 %}urgent-card{% else %}border-l-4 border-l-slate-900{% endif %}">
+                    <div class="text-[10px] font-black text-slate-400 uppercase mb-1">{{ j.vonal }}</div>
+                    <div class="text-sm font-bold text-slate-800 truncate mb-3">{{ j.cel }}</div>
+                    <div class="flex justify-between items-end">
+                        <div class="text-3xl font-black text-slate-900 leading-none">{% if j.hatralevo >= 0 %}{{ j.hatralevo }}{% else %}--{% endif %}</div>
+                        <div class="text-[10px] font-bold text-slate-400 uppercase pb-1 ml-1">perc</div>
+                    </div>
+                    <div class="mt-3 pt-2 border-t border-slate-50 text-[9px] text-slate-400 font-mono italic">
+                        Terv: {{ j.ido }}
+                    </div>
+                </div>
+                {% endfor %}
+                {% if not kovetkezo_ot and valasztott_nev %}
+                <div class="col-span-5 p-4 text-center bg-white rounded-xl text-slate-400 text-xs italic">Nincs több induló járat a mai napon.</div>
+                {% endif %}
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="bg-slate-900 px-6 py-4 flex justify-between items-center">
+                    <h3 class="text-white text-xs font-bold uppercase tracking-widest italic">Menetrendi adatsorok</h3>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-[10px] font-black text-slate-400 uppercase">
+                            <tr>
+                                <th class="px-6 py-4">Indulás</th>
+                                <th class="px-6 py-4">Vonal</th>
+                                <th class="px-6 py-4">Célállomás</th>
+                                <th class="px-6 py-4 text-center">Naptár (H-V)</th>
+                                <th class="px-6 py-4 text-right">Becsült</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            {% for m in menetrend %}
+                            <tr class="hover:bg-slate-50 transition-colors">
+                                <td class="px-6 py-4 font-mono font-bold text-slate-400 italic">{{ m.ido }}</td>
+                                <td class="px-6 py-4"><span class="bg-slate-100 px-2 py-0.5 rounded font-black text-[11px] text-slate-700">{{ m.vonal }}</span></td>
+                                <td class="px-6 py-4 font-semibold text-slate-800">{{ m.cel }}</td>
+                                <td class="px-6 py-4 text-center font-mono text-[11px] tracking-tighter">
+                                    {% for i, n in enumerate(['H','K','Sz','Cs','P','Sz','V']) %}
+                                    <span class="{{ 'day-active' if m.napok_pipa[i] else 'day-inactive' }} px-0.5">{{ n }}</span>
+                                    {% endfor %}
+                                </td>
+                                <td class="px-6 py-4 text-right font-black">
+                                    {% if m.hatralevo >= 0 %}
+                                    <span class="{{ 'text-red-600' if m.hatralevo <= 5 else 'text-slate-900' }}">{{ m.hatralevo }} perc</span>
+                                    {% else %}<span class="text-slate-300 italic text-xs">Indult</span>{% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="bg-slate-900 p-3 rounded-xl font-mono text-[9px] text-green-500 overflow-hidden whitespace-nowrap">
+                Status: {{ diag.get('status', 'Nincs adat') }} | 
+                Delay: +{{ diag.get('delay_min', 0) }} min | 
+                Raw: {{ diag.get('raw_json', '{}')[:100] }}...
+            </div>
         </div>
     </div>
-    {% endif %}
-</div>
+
+    <script>
+        const searchInput = document.getElementById('stopSearch');
+        const resultsDiv = document.getElementById('results');
+
+        searchInput.addEventListener('input', async (e) => {
+            const val = e.target.value;
+            if (val.length < 2) { resultsDiv.classList.add('hidden'); return; }
+            const resp = await fetch(`/api/suggest?q=${val}`);
+            const data = await resp.json();
+            resultsDiv.innerHTML = '';
+            data.forEach(item => {
+                const d = document.createElement('div');
+                d.className = 'search-item';
+                d.innerText = item.name;
+                d.onclick = () => {
+                    searchInput.value = item.name;
+                    resultsDiv.classList.add('hidden');
+                    document.getElementById('mainForm').submit();
+                };
+                resultsDiv.appendChild(d);
+            });
+            resultsDiv.classList.remove('hidden');
+        });
+
+        var map = L.map('map').setView([{{ coords[0] }}, {{ coords[1] }}], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        {% if valasztott_nev %}
+        L.marker([{{ coords[0] }}, {{ coords[1] }}]).addTo(map).bindPopup("{{ valasztott_nev }}").openPopup();
+        {% endif %}
+    </script>
 </body>
 </html>
