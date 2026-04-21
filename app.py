@@ -8,7 +8,7 @@ app = Flask(__name__)
 app.jinja_env.globals.update(enumerate=enumerate)
 
 DB_PATH = r'C:\Users\Vani\Desktop\DOKTORI\volan_gtfs\kozlekedes_osszes.db'
-GOOGLE_MAPS_API_KEY = "AIzaSyBQeGTZHienzKBI-ZczNV2QBCrGQqpMmVs"
+GOOGLE_MAPS_API_KEY = "API_KEY"
 
 def get_google_delay_refined(lat, lon):
     url = "https://routes.googleapis.com/directions/v2:computeRoutes"
